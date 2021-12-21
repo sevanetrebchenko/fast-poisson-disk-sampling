@@ -2,33 +2,57 @@
 #pragma once
 
 #include <vector>
-#include <string>
-#include <stdexcept>
 #include <cmath>
 #include <random>
-#include <iostream>
 
 #define PI 3.1415926535897932384626433f
 #define NO_SAMPLE -1
 
 namespace fpds {
 
+    // Utility functionality + helper classes.
+
     struct vec2 {
-        vec2() : x(0.0f), y(0.0f) { }
-        vec2(float x, float y) : x(x), y(y) { }
+        vec2() : x(0.0f), y(0.0f) {}
+        vec2(float x, float y) : x(x), y(y) {}
 
         float x;
         float y;
     };
 
+    struct ivec2 {
+        ivec2() : x(0), y(0) {}
+        ivec2(int x, int y) : x(x), y(y) {}
+
+        int x;
+        int y;
+    };
+
     struct vec3 {
-        vec3() : x(0.0f), y(0.0f), z(0.0f) { }
-        vec3(float x, float y, float z) : x(x), y(y), z(z) { }
+        vec3() : x(0.0f), y(0.0f), z(0.0f) {}
+        vec3(float x, float y, float z) : x(x), y(y), z(z) {}
 
         float x;
         float y;
         float z;
     };
+
+    struct ivec3 {
+        ivec3() : x(0), y(0), z(0) {}
+        ivec3(int x, int y, int z) : x(x), y(y), z(z) {}
+
+        int x;
+        int y;
+        int z;
+    };
+
+    [[nodiscard]] float distance2(const vec2& a, const vec2& b) {
+        return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
+    }
+
+    [[nodiscard]] float distance2(const vec3& a, const vec3& b) {
+        return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z);
+    }
 
     [[nodiscard]] int uniform_int_distribution(int min, int max) {
         static std::random_device device;
@@ -41,175 +65,322 @@ namespace fpds {
     [[nodiscard]] float uniform_real_distribution(float min, float max) {
         static std::random_device device;
         static std::default_random_engine generator(device());
-
         std::uniform_real_distribution<float> distribution(min, max);
 
         return distribution(generator);
     }
 
     struct grid {
-        grid(vec2 dimensions, float r) : cell_size_(r / sqrtf(2.0f)),
-                                         grid_width_(static_cast<int>(std::ceil(dimensions.x / cell_size_))),
-                                         grid_height_(static_cast<int>(std::ceil(dimensions.y / cell_size_))),
-                                         grid_size_(grid_width_ * grid_height_),
-                                         grid_(grid_width_ * grid_height_),
-                                         sample_(0) {
-            for (int i = 0; i < grid_size_; ++i) {
-                grid_[i] = NO_SAMPLE;
+        grid(const vec2& dimensions, float separation_distance)
+                : cell_size(separation_distance / sqrtf(2.0f)),
+                  grid_width(static_cast<int>(std::ceil(dimensions.x / cell_size))),
+                  grid_height(static_cast<int>(std::ceil(dimensions.y / cell_size))),
+                  grid_depth(-1), // Unused for a 2-dimensional grid.
+                  grid_size(grid_width * grid_height),
+                  grid_data(grid_size) {
+            for (int i = 0; i < grid_size; ++i) {
+                grid_data[i] = NO_SAMPLE;
             }
         }
 
-        void register_point(vec2 world_coordinates) {
-            vec2 grid_coordinates = convert_to_grid_coordinates(world_coordinates);
-            grid_[index(grid_coordinates)] = sample_;
+        grid(const vec3& dimensions, float separation_distance)
+                : cell_size(separation_distance / sqrtf(2.0f)),
+                  grid_width(static_cast<int>(std::ceil(dimensions.x / cell_size))),
+                  grid_height(static_cast<int>(std::ceil(dimensions.y / cell_size))),
+                  grid_depth(static_cast<int>(std::ceil(dimensions.z / cell_size))),
+                  grid_size(grid_width * grid_height * grid_depth),
+                  grid_data(grid_size) {
+            for (int i = 0; i < grid_size; ++i) {
+                grid_data[i] = NO_SAMPLE;
+            }
         }
 
-        [[nodiscard]] vec2 convert_to_grid_coordinates(const vec2& coordinate) const {
-            return { std::floor(coordinate.x / cell_size_), std::floor(coordinate.y / cell_size_) };
+        // 2D index into flattened array.
+        [[nodiscard]] int get(int x, int y) const {
+            return grid_data[x + grid_width * y];
         }
 
-        [[nodiscard]] int index(vec2 grid_coordinates) const {
-            return static_cast<int>(grid_coordinates.x) + grid_width_ * static_cast<int>(grid_coordinates.y);
+        void set(int value, int x, int y) {
+            grid_data[x + grid_width * y] = value;
         }
 
-        float cell_size_;
-        int grid_width_;
-        int grid_height_;
-        int grid_size_;
+        // 3D index into flattened array.
+        [[nodiscard]] int get(int x, int y, int z) const {
+            return grid_data[x + grid_width * z + grid_width * grid_depth * y];
+        }
 
-        std::vector<int> grid_;
-        int sample_;
+        void set(int value, int x, int y, int z) {
+            grid_data[x + grid_width * z + grid_width * grid_depth * y] = value;
+        }
+
+        [[nodiscard]] ivec2 convert_to_grid_coordinates(const vec2& world_coordinates) const {
+            return { static_cast<int>(std::floor(world_coordinates.x / cell_size)),
+                     static_cast<int>(std::floor(world_coordinates.y / cell_size)) };
+        }
+
+        [[nodiscard]] ivec3 convert_to_grid_coordinates(const vec3& world_coordinates) const {
+            return { static_cast<int>(std::floor(world_coordinates.x / cell_size)),
+                     static_cast<int>(std::floor(world_coordinates.y / cell_size)),
+                     static_cast<int>(std::floor(world_coordinates.z / cell_size)) };
+        }
+
+        float cell_size;
+
+        int grid_width;
+        int grid_height;
+        int grid_depth;
+        int grid_size;
+
+        std::vector<int> grid_data;
     };
 
 
 
-    [[nodiscard]] vec2 convert_to_grid_space(const vec2& coordinate, float cell_size) {
-        return { std::floor(coordinate.x / cell_size), std::floor(coordinate.y / cell_size) };
-    }
-
-    // 'r' - minimum distance to be maintained between final samples.
+    // Fast Poisson Disk Sampling algorithm, for 2D applications.
+    // 'r' - minimum distance to be maintained between final point samples.
     // 'k' - limit of samples to try before sample rejection (defaulted at 30, provided by the paper).
     [[nodiscard]] std::vector<vec2> fast_poisson_disk_2d(vec2 dimensions, float r, int k = 30) {
-        float cell_size = r / sqrtf(2.0f);
-        int grid_width = static_cast<int>(std::ceil(dimensions.x / cell_size));
-        int grid_height = static_cast<int>(std::ceil(dimensions.y / cell_size));
-        int grid_size = grid_width * grid_height;
-
-        // Construct grid (n-dimensional array of integers).
-        std::vector<int> grid(grid_size);
-        for (int i = 0; i < grid_size; ++i) {
-            grid[i] = NO_SAMPLE;
-        }
+        grid g { dimensions, r };
 
         std::vector<int> active_list;
         std::vector<vec2> point_list;
 
         // Generate initial sample, randomly chosen uniformly from the given domain.
-        // In world coordinate space.
-        vec2 sample = vec2(uniform_real_distribution(0.0f, dimensions.x), uniform_real_distribution(0.0f, dimensions.y));
-        point_list.emplace_back(sample);
+        // Sample is in world coordinates.
+        vec2 sample_world_coordinates = vec2(uniform_real_distribution(0.0f, dimensions.x),
+                                             uniform_real_distribution(0.0f, dimensions.y));
 
-        // Insert sample into background grid.
-        // Initial sample has index 0.
-        int counter = 0;
-        vec2 grid_sample = convert_to_grid_space(sample, cell_size);
-        grid[static_cast<int>(grid_sample.x) + grid_width * static_cast<int>(grid_sample.y)] = counter;
-        active_list.emplace_back(counter);
+        // Record sample in grid.
+        int sample_index = 0;
+        ivec2 sample_grid_coordinates = g.convert_to_grid_coordinates(sample_world_coordinates);
+        g.set(sample_index, sample_grid_coordinates.x, sample_grid_coordinates.y);
 
-        ++counter;
+        point_list.emplace_back(sample_world_coordinates);
+        active_list.emplace_back(sample_index);
+
+        ++sample_index;
 
         while (!active_list.empty()) {
-            // Choose random index from active list.
-            int index = uniform_int_distribution(0, (int)active_list.size() - 1);
-            sample = point_list[index];
+            // Choose random index from active sample list.
+            int index = uniform_int_distribution(0, (int) active_list.size() - 1);
+            sample_world_coordinates = point_list[index];
 
-            bool found = false;
+            bool found_sample = false;
 
-            // Generate up to k points between 'r' and '2r' distance away from the randomly chosen point.
+            // Try up to 'k' times to find a valid point.
             for (int i = 0; i < k; ++i) {
+                // Uniformly generate test points between 'r' and '2r' distance away around the chosen point.
                 float radians = uniform_real_distribution(0.0f, 2.0f * PI);
                 float radius = uniform_real_distribution(r, 2.0f * r);
 
-                vec2 test_point (sample.x + radius * cosf(radians), sample.y + radius * sinf(radius));
+                vec2 test_sample_world_coordinates = vec2(sample_world_coordinates.x + radius * cosf(radians),
+                                                          sample_world_coordinates.y + radius * sinf(radians));
 
-                if (test_point.x < 0.0f || test_point.x >= dimensions.x) {
+                // Ensure offsetting point did not push it out of bounds.
+                if (test_sample_world_coordinates.x < 0.0f || test_sample_world_coordinates.x >= dimensions.x) {
+                    continue;
+                }
+                if (test_sample_world_coordinates.y < 0.0f || test_sample_world_coordinates.y >= dimensions.y) {
                     continue;
                 }
 
-                if (test_point.y < 0.0f || test_point.y >= dimensions.y) {
+                ivec2 test_sample_grid_coordinates = g.convert_to_grid_coordinates(test_sample_world_coordinates);
+
+                // Don't override cells that already have samples in them.
+                int test_sample_index = g.get(test_sample_grid_coordinates.x, test_sample_grid_coordinates.y);
+                if (test_sample_index != NO_SAMPLE) {
                     continue;
                 }
 
-                vec2 grid_test_point = convert_to_grid_space(test_point, cell_size);
+                bool valid_sample = true;
 
-                // Check to make sure point doesn't exist in this cell.
-                int current_sample_index = grid[static_cast<int>(grid_test_point.x) + grid_width * static_cast<int>(grid_test_point.y)];
-                if (current_sample_index != NO_SAMPLE) {
-                    continue;
-                }
-
-                bool valid = true;
-
-                // Check grid cells directly adjacent to the test cell.
+                // Check grid cells directly adjacent to the test cell to ensure the validity of the selected sample.
                 for (int y = -1; y < 2; ++y) {
-                    bool break_out = false;
-
                     for (int x = -1; x < 2; ++x) {
                         if (x == 0 && y == 0) {
                             continue;
                         }
 
-                        int row = static_cast<int>(grid_test_point.x) + x;
-                        int col = static_cast<int>(grid_test_point.y) + y;
+                        int x_offset = test_sample_grid_coordinates.x + x;
+                        int y_offset = test_sample_grid_coordinates.y + y;
 
-                        // Ensure valid bounds.
-                        if (row < 0 || row >= grid_width) {
+                        // Ensure desired offset into the grid is in range.
+                        if (x_offset < 0 || x_offset >= g.grid_width) {
                             continue;
                         }
-
-                        if (col < 0 || col >= grid_height) {
+                        if (y_offset < 0 || y_offset >= g.grid_height) {
                             continue;
                         }
 
                         // Offset from current point.
-                        current_sample_index = grid[row + grid_width * col];
+                        test_sample_index = g.get(x_offset, y_offset);
 
-                        if (current_sample_index != NO_SAMPLE) {
-                            // Grid stores indices into points_list.
-                            vec2 t = point_list[current_sample_index];
+                        if (test_sample_index != NO_SAMPLE) {
+                            // Found existing sample in the checked grid cell.
+                            // Selected sample may still be valid if the separation between the existing and selected
+                            // samples is adequately far.
+                            const vec2& existing_sample = point_list[test_sample_index];
 
                             // Ensure separation between current and test point is at least 'r'.
-                            float distance = sqrtf((t.x - test_point.x) * (t.x - test_point.x) + (t.y - test_point.y) * (t.y - test_point.y));
-                            if (distance < r) {
-                                valid = false;
-                                break_out = true;
+                            if (distance2(existing_sample, test_sample_world_coordinates) < r * r) {
+                                valid_sample = false;
                                 break;
                             }
                         }
                     }
-
-                    if (break_out) {
-                        break;
-                    }
                 }
 
-                if (valid) {
-                    // Found valid sample, append to list.
-                    point_list.emplace_back(test_point);
+                if (valid_sample) {
+                    // Record sample in grid.
+                    g.set(sample_index, test_sample_grid_coordinates.x, test_sample_grid_coordinates.y);
 
-                    // Mark point in grid.
-                    grid[static_cast<int>(grid_test_point.x) + grid_width * static_cast<int>(grid_test_point.y)] = counter;
-                    active_list.emplace_back(counter);
+                    point_list.emplace_back(test_sample_world_coordinates);
+                    active_list.emplace_back(sample_index);
 
-                    ++counter;
+                    ++sample_index;
 
-                    found = true;
+                    found_sample = true;
                     break;
                 }
             }
 
-            if (!found) {
-                // 'k' attempts passed and no point found, remove index from sample list.
+            if (!found_sample) {
+                // Failed to find a valid point position after 'k' attempts.
+                // We can say, within a reasonable certainty, that no more points can fit around the chosen point.
+                active_list.erase(active_list.begin() + index);
+            }
+        }
+
+        return point_list;
+    }
+
+
+
+    // Fast Poisson Disk Sampling algorithm, for 3D applications.
+    // 'r' - minimum distance to be maintained between final point samples.
+    // 'k' - limit of samples to try before sample rejection (defaulted at 30, provided by the paper).
+    [[nodiscard]] std::vector<vec3> fast_poisson_disk_3d(vec3 dimensions, float r, int k = 30) {
+        grid g { dimensions, r };
+
+        std::vector<int> active_list;
+        std::vector<vec3> point_list;
+
+        // Generate initial sample, randomly chosen uniformly from the given domain.
+        // Sample is in world coordinates.
+        vec3 sample_world_coordinates = vec3(uniform_real_distribution(0.0f, dimensions.x),
+                                             uniform_real_distribution(0.0f, dimensions.y),
+                                             uniform_real_distribution(0.0f, dimensions.z));
+
+        // Record sample in grid.
+        int sample_index = 0;
+        ivec3 sample_grid_coordinates = g.convert_to_grid_coordinates(sample_world_coordinates);
+        g.set(sample_index, sample_grid_coordinates.x, sample_grid_coordinates.y, sample_grid_coordinates.z);
+
+        point_list.emplace_back(sample_world_coordinates);
+        active_list.emplace_back(sample_index);
+
+        ++sample_index;
+
+        while (!active_list.empty()) {
+            // Choose random index from active sample list.
+            int index = uniform_int_distribution(0, (int) active_list.size() - 1);
+            sample_world_coordinates = point_list[index];
+
+            bool found_sample = false;
+
+            // Try up to 'k' times to find a valid point.
+            for (int i = 0; i < k; ++i) {
+                // Uniformly generate test points between 'r' and '2r' distance away around the chosen point.
+                float theta = uniform_real_distribution(0.0f, 2.0f * PI);
+                float phi = uniform_real_distribution(0.0f, PI);
+                float radius = uniform_real_distribution(r, 2.0f * r);
+
+                vec3 test_sample_world_coordinates = vec3(sample_world_coordinates.x + radius * cosf(theta) * sinf(phi),
+                                                          sample_world_coordinates.y + radius * sinf(theta) * sinf(phi),
+                                                          sample_world_coordinates.z + radius * cosf(phi));
+
+                // Ensure offsetting point did not push it out of bounds.
+                if (test_sample_world_coordinates.x < 0.0f || test_sample_world_coordinates.x >= dimensions.x) {
+                    continue;
+                }
+                if (test_sample_world_coordinates.y < 0.0f || test_sample_world_coordinates.y >= dimensions.y) {
+                    continue;
+                }
+                if (test_sample_world_coordinates.z < 0.0f || test_sample_world_coordinates.z >= dimensions.z) {
+                    continue;
+                }
+
+                ivec3 test_sample_grid_coordinates = g.convert_to_grid_coordinates(test_sample_world_coordinates);
+
+                // Don't override cells that already have samples in them.
+                int test_sample_index = g.get(test_sample_grid_coordinates.x,
+                                              test_sample_grid_coordinates.y,
+                                              test_sample_grid_coordinates.z);
+                if (test_sample_index != NO_SAMPLE) {
+                    continue;
+                }
+
+                bool valid_sample = true;
+
+                // Check grid cells directly adjacent to the test cell to ensure the validity of the selected sample.
+                for (int y = -1; y < 2; ++y) {
+                    for (int x = -1; x < 2; ++x) {
+                        for (int z = -1; z < 2; ++z) {
+                            if (x == 0 && y == 0 && z == 0) {
+                                continue;
+                            }
+
+                            int x_offset = test_sample_grid_coordinates.x + x;
+                            int y_offset = test_sample_grid_coordinates.y + y;
+                            int z_offset = test_sample_grid_coordinates.z + z;
+
+                            // Ensure desired offset into the grid is in range.
+                            if (x_offset < 0 || x_offset >= g.grid_width) {
+                                continue;
+                            }
+                            if (y_offset < 0 || y_offset >= g.grid_height) {
+                                continue;
+                            }
+                            if (z_offset < 0 || z_offset >= g.grid_depth) {
+                                continue;
+                            }
+
+                            // Offset from current point.
+                            test_sample_index = g.get(x_offset, y_offset, z_offset);
+
+                            if (test_sample_index != NO_SAMPLE) {
+                                // Found existing sample in the checked grid cell.
+                                // Selected sample may still be valid if the separation between the existing and selected
+                                // samples is adequately far.
+                                const vec3& existing_sample = point_list[test_sample_index];
+
+                                // Ensure separation between current and test point is at least 'r'.
+                                if (distance2(existing_sample, test_sample_world_coordinates) < r * r) {
+                                    valid_sample = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (valid_sample) {
+                    // Record sample in grid.
+                    g.set(sample_index, test_sample_grid_coordinates.x, test_sample_grid_coordinates.y, test_sample_grid_coordinates.z);
+
+                    point_list.emplace_back(test_sample_world_coordinates);
+                    active_list.emplace_back(sample_index);
+
+                    ++sample_index;
+
+                    found_sample = true;
+                    break;
+                }
+            }
+
+            if (!found_sample) {
+                // Failed to find a valid point position after 'k' attempts.
+                // We can say, within a reasonable certainty, that no more points can fit around the chosen point.
                 active_list.erase(active_list.begin() + index);
             }
         }
