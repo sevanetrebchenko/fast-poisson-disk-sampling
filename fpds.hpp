@@ -14,30 +14,16 @@
 namespace fpds {
 
     struct vec2 {
-        vec2() : x(0.0f), y(0.0f) {
-        }
-
-        vec2(float x, float y) : x(x), y(y) {
-        }
-
-        [[nodiscard]] float operator[](int index) const {
-            if (index < 0 || index >= 2) {
-                throw std::out_of_range("index " + std::to_string(index) + " is out of range.");
-            }
-            return index == 0 ? x : y;
-        }
+        vec2() : x(0.0f), y(0.0f) { }
+        vec2(float x, float y) : x(x), y(y) { }
 
         float x;
         float y;
     };
 
     struct vec3 {
-        [[nodiscard]] float operator[](int index) const {
-            if (index < 0 || index >= 3) {
-                throw std::out_of_range("index " + std::to_string(index) + " is out of range.");
-            }
-            return index == 0 ? x : index == 1 ? y : z;
-        }
+        vec3() : x(0.0f), y(0.0f), z(0.0f) { }
+        vec3(float x, float y, float z) : x(x), y(y), z(z) { }
 
         float x;
         float y;
@@ -60,6 +46,42 @@ namespace fpds {
 
         return distribution(generator);
     }
+
+    struct grid {
+        grid(vec2 dimensions, float r) : cell_size_(r / sqrtf(2.0f)),
+                                         grid_width_(static_cast<int>(std::ceil(dimensions.x / cell_size_))),
+                                         grid_height_(static_cast<int>(std::ceil(dimensions.y / cell_size_))),
+                                         grid_size_(grid_width_ * grid_height_),
+                                         grid_(grid_width_ * grid_height_),
+                                         sample_(0) {
+            for (int i = 0; i < grid_size_; ++i) {
+                grid_[i] = NO_SAMPLE;
+            }
+        }
+
+        void register_point(vec2 world_coordinates) {
+            vec2 grid_coordinates = convert_to_grid_coordinates(world_coordinates);
+            grid_[index(grid_coordinates)] = sample_;
+        }
+
+        [[nodiscard]] vec2 convert_to_grid_coordinates(const vec2& coordinate) const {
+            return { std::floor(coordinate.x / cell_size_), std::floor(coordinate.y / cell_size_) };
+        }
+
+        [[nodiscard]] int index(vec2 grid_coordinates) const {
+            return static_cast<int>(grid_coordinates.x) + grid_width_ * static_cast<int>(grid_coordinates.y);
+        }
+
+        float cell_size_;
+        int grid_width_;
+        int grid_height_;
+        int grid_size_;
+
+        std::vector<int> grid_;
+        int sample_;
+    };
+
+
 
     [[nodiscard]] vec2 convert_to_grid_space(const vec2& coordinate, float cell_size) {
         return { std::floor(coordinate.x / cell_size), std::floor(coordinate.y / cell_size) };
@@ -89,12 +111,12 @@ namespace fpds {
 
         // Insert sample into background grid.
         // Initial sample has index 0.
-        int sample_index = 0;
+        int counter = 0;
         vec2 grid_sample = convert_to_grid_space(sample, cell_size);
-        grid[static_cast<int>(grid_sample.x) + grid_width * static_cast<int>(grid_sample.y)] = sample_index;
-        active_list.emplace_back(sample_index);
+        grid[static_cast<int>(grid_sample.x) + grid_width * static_cast<int>(grid_sample.y)] = counter;
+        active_list.emplace_back(counter);
 
-        ++sample_index;
+        ++counter;
 
         while (!active_list.empty()) {
             // Choose random index from active list.
@@ -120,6 +142,12 @@ namespace fpds {
 
                 vec2 grid_test_point = convert_to_grid_space(test_point, cell_size);
 
+                // Check to make sure point doesn't exist in this cell.
+                int current_sample_index = grid[static_cast<int>(grid_test_point.x) + grid_width * static_cast<int>(grid_test_point.y)];
+                if (current_sample_index != NO_SAMPLE) {
+                    continue;
+                }
+
                 bool valid = true;
 
                 // Check grid cells directly adjacent to the test cell.
@@ -144,15 +172,15 @@ namespace fpds {
                         }
 
                         // Offset from current point.
-                        int current_sample_index = grid[row + grid_width * col];
+                        current_sample_index = grid[row + grid_width * col];
 
                         if (current_sample_index != NO_SAMPLE) {
                             // Grid stores indices into points_list.
-                            sample = point_list[current_sample_index];
+                            vec2 t = point_list[current_sample_index];
 
                             // Ensure separation between current and test point is at least 'r'.
-                            float distance = (sample.x - test_point.x) * (sample.x - test_point.x) + (sample.y - test_point.y) * (sample.y - test_point.y);
-                            if (distance < r * r) {
+                            float distance = sqrtf((t.x - test_point.x) * (t.x - test_point.x) + (t.y - test_point.y) * (t.y - test_point.y));
+                            if (distance < r) {
                                 valid = false;
                                 break_out = true;
                                 break;
@@ -170,17 +198,17 @@ namespace fpds {
                     point_list.emplace_back(test_point);
 
                     // Mark point in grid.
-                    grid[static_cast<int>(grid_test_point.x) + grid_width * static_cast<int>(grid_test_point.y)] = sample_index;
-                    active_list.emplace_back(sample_index);
+                    grid[static_cast<int>(grid_test_point.x) + grid_width * static_cast<int>(grid_test_point.y)] = counter;
+                    active_list.emplace_back(counter);
 
-                    ++sample_index;
+                    ++counter;
 
                     found = true;
                     break;
                 }
             }
 
-            if (!found && !active_list.empty()) {
+            if (!found) {
                 // 'k' attempts passed and no point found, remove index from sample list.
                 active_list.erase(active_list.begin() + index);
             }
